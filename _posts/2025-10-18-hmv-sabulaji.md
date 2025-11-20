@@ -126,7 +126,7 @@ total size is 13,312  speedup is 0.99
 
 拿到一个**secrets.doc**，拉到本地看看
 
-![屏幕截图 2025-10-18 134313](/assets/img/屏幕截图 2025-10-18 134313.png)
+![屏幕截图 2025-10-18 134313](/assets/img/3.png)
 
 拿到凭证 `welcome:P@ssw0rd123!`
 
